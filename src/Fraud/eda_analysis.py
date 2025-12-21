@@ -59,7 +59,7 @@ class ImportantFeaturesEDA:
             'Percentage (%)': percentages
         })
         print("=== Class Imbalance ===")
-        display(imbalance_df)
+        print(imbalance_df)
 
     # ============================================================
     # Bivariate Analysis (important features vs fraud)
