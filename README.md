@@ -60,3 +60,19 @@ trainer = FraudModelTrainer(df)
 trainer.prepare_data()
 trainer.train_random_forest()
 trainer.plot_results()
+
+## ✅ Testing
+To ensure the robustness of the fraud detection pipeline, we use `pytest`.
+Our tests cover:
+- **Data Validation:** Ensures required columns are present.
+- **Resampling Accuracy:** Verifies SMOTE balances the classes correctly.
+- **Model Output:** Confirms prediction shapes and data types.
+
+Run tests with:
+`pytest tests/`
+
+### 🛠️ Defensive Engineering
+This project implements defensive programming practices:
+- **Input Validation:** The `FraudModelTrainer` validates the existence of target columns (`class`/`Class`) before execution.
+- **Robust Testing:** The test suite in `tests/` includes edge-case testing (empty datasets, missing features) to ensure production stability.
+- **CI Automation:** Every push is automatically tested via GitHub Actions to prevent regressions.
