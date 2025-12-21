@@ -2,6 +2,7 @@ import pytest
 import pandas as pd
 import numpy as np
 from src.Fraud.model_training import FraudModelTrainer
+from src.Credit.model_training import FraudModelTrainer
 
 # 1. Use a Fixture to create "Synthetic" data (Adoptability)
 # This means the tests don't need your 100MB CSV file to run.
