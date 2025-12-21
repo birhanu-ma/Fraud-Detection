@@ -15,7 +15,7 @@ class ImportantFeaturesEDA:
         print("=== Class Imbalance Quantification ===")
         counts = self.df[self.target].value_counts()
         percents = self.df[self.target].value_counts(normalize=True) * 100
-        display(pd.DataFrame({'Count': counts, 'Percentage (%)': percents}))
+        print(pd.DataFrame({'Count': counts, 'Percentage (%)': percents}))
 
         plt.figure(figsize=(6, 4))
         sns.countplot(data=self.df, x='label', palette='viridis')
