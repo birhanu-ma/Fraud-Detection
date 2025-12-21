@@ -24,15 +24,23 @@ class FraudModelTrainer:
         self.results = {}
 
     def prepare_data(self):
-        """Prepares X and y, handling case-sensitivity for the target column."""
-        # Check for 'Class' vs 'class' to avoid KeyError
+        """
+        Prepares X and y with defensive checks for data integrity.
+        Updates: Added check for empty DF and switched KeyError to ValueError.
+        """
+        # 1. Defensive Check: Empty DataFrame
+        if self.df.empty:
+            raise ValueError("Cannot prepare data: The provided DataFrame is empty.")
+
+        # 2. Defensive Check: Target column identification
         if self.target_col not in self.df.columns:
             if 'class' in self.df.columns:
                 self.target_col = 'class'
             elif 'Class' in self.df.columns:
                 self.target_col = 'Class'
             else:
-                raise KeyError(f"Target column not found. Available: {self.df.columns.tolist()}")
+                # Switched to ValueError to satisfy robust testing requirements
+                raise ValueError(f"Target column not found. Available: {self.df.columns.tolist()}")
 
         self.X = self.df.drop(columns=[self.target_col])
         self.y = self.df[self.target_col]
@@ -46,15 +54,24 @@ class FraudModelTrainer:
         )
         print(f"✅ Data prepared. Target column identified as: '{self.target_col}'")
 
+    def _check_class_diversity(self):
+        """Internal helper to ensure both classes are present before training."""
+        if len(np.unique(self.y_train)) < 2:
+            raise ValueError("Training aborted: The training set contains only one class.")
+
     def train_logistic_regression(self):
-        """Baseline model training."""
+        """Baseline model training with defensive class check."""
+        self._check_class_diversity()
+        
         model = LogisticRegression(max_iter=500, solver='liblinear', random_state=self.random_state)
         model.fit(self.X_train, self.y_train)
         self.models["Logistic Regression"] = model
         print("✅ Logistic Regression trained.")
 
     def train_random_forest(self, n_estimators=100):
-        """Optimized Ensemble model training."""
+        """Optimized Ensemble model training with defensive class check."""
+        self._check_class_diversity()
+
         model = RandomForestClassifier(
             n_estimators=n_estimators,
             max_depth=10,
@@ -83,7 +100,10 @@ class FraudModelTrainer:
         print(f"✅ {model_name} Evaluated.")
 
     def cross_validate_model(self, model_name, k=5):
-        """Performs Stratified K-Fold Cross Validation (Task 2 Requirement)."""
+        """Performs Stratified K-Fold Cross Validation."""
+        if model_name not in self.models:
+             raise ValueError(f"Model '{model_name}' must be trained before cross-validation.")
+
         print(f"Running {k}-fold Cross Validation for {model_name}...")
         model = self.models[model_name]
 
@@ -107,7 +127,7 @@ class FraudModelTrainer:
         }
 
     def compare_models(self):
-        """Returns a side-by-side DataFrame comparison of all evaluated models."""
+        """Returns a side-by-side DataFrame comparison."""
         comparison = []
         for model_name, metrics in self.results.items():
             comparison.append({
@@ -118,13 +138,12 @@ class FraudModelTrainer:
         return pd.DataFrame(comparison)
 
     def plot_results(self):
-        """Displays Confusion Matrices for all evaluated models in the notebook."""
+        """Displays Confusion Matrices for all evaluated models."""
         if not self.results:
             print("❌ No evaluation results found. Run evaluate_model() first.")
             return
 
         fig, axes = plt.subplots(1, len(self.results), figsize=(12, 4))
-        # Ensure axes is iterable even if there is only one model
         if len(self.results) == 1: axes = [axes]
         
         for i, (name, metrics) in enumerate(self.results.items()):
