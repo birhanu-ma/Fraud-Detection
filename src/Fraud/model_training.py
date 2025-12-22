@@ -114,16 +114,28 @@ class FraudModelTrainer:
             })
 
         return pd.DataFrame(comparison)
+ 
     def plot_results(self):
-        """Fast visualization of all trained models."""
-        fig, axes = plt.subplots(1, len(self.results), figsize=(12, 4))
-        if len(self.results) == 1: axes = [axes] # Handle single model case
-        
-        for i, (name, metrics) in enumerate(self.results.items()):
-            sns.heatmap(metrics["CM"], annot=True, fmt='d', cmap='Greens', ax=axes[i], cbar=False)
-            axes[i].set_title(f"{name}\nF1: {metrics['F1_Score']:.2f}")
-        plt.tight_layout()
-        plt.show()
+          """Fast visualization of all trained models."""
+          if not self.results:
+              print("No results to plot. Run evaluate_model() first.")
+              return
+  
+          fig, axes = plt.subplots(1, len(self.results), figsize=(12, 4))
+          
+          # Handle the case where there is only one model (axes is not an array)
+          if len(self.results) == 1: 
+              axes = [axes] 
+          
+          for i, (name, metrics) in enumerate(self.results.items()):
+              # Change "CM" to "Confusion_Matrix" to match evaluate_model
+              sns.heatmap(metrics["Confusion_Matrix"], annot=True, fmt='d', cmap='Greens', ax=axes[i], cbar=False)
+              axes[i].set_title(f"{name}\nF1: {metrics['F1_Score']:.2f}")
+              axes[i].set_xlabel('Predicted')
+              axes[i].set_ylabel('Actual')
+              
+          plt.tight_layout()
+          plt.show()
     def get_feature_importance(self, model_name="Random Forest"):
         """Task 3: Extract importance with a single default color."""
         if model_name not in self.models:
