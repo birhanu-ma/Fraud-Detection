@@ -1,5 +1,12 @@
 import numpy as np
 import pandas as pd
+import shap
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_validate
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -136,21 +143,115 @@ class FraudModelTrainer:
                 "F1_Score": metrics["F1_Score"]
             })
         return pd.DataFrame(comparison)
-
     def plot_results(self):
-        """Displays Confusion Matrices for all evaluated models."""
-        if not self.results:
-            print("❌ No evaluation results found. Run evaluate_model() first.")
-            return
-
+        """Fast visualization of all trained models."""
         fig, axes = plt.subplots(1, len(self.results), figsize=(12, 4))
-        if len(self.results) == 1: axes = [axes]
+        if len(self.results) == 1: axes = [axes] # Handle single model case
         
         for i, (name, metrics) in enumerate(self.results.items()):
             sns.heatmap(metrics["CM"], annot=True, fmt='d', cmap='Greens', ax=axes[i], cbar=False)
             axes[i].set_title(f"{name}\nF1: {metrics['F1_Score']:.2f}")
-            axes[i].set_ylabel('Actual')
-            axes[i].set_xlabel('Predicted')
-            
         plt.tight_layout()
         plt.show()
+    def get_feature_importance(self, model_name="Random Forest"):
+        """Task 3: Extract importance with a single default color."""
+        if model_name not in self.models:
+            raise ValueError(f"Model {model_name} not trained.")
+        
+        model = self.models[model_name]
+        importances = model.feature_importances_
+        feature_names = self.X.columns
+        
+        fi_df = pd.DataFrame({'Feature': feature_names, 'Importance': importances})
+        fi_df = fi_df.sort_values(by='Importance', ascending=False).head(10)
+    
+        plt.figure(figsize=(10, 6))
+        # Use color='steelblue' for a single, consistent bar color
+        sns.barplot(x='Importance', y='Feature', data=fi_df, color='steelblue')
+        plt.title(f"Top 10 Feature Importances ({model_name})")
+        plt.xlabel("Importance Score")
+        plt.ylabel("Features")
+        plt.tight_layout()
+        plt.show()
+
+    def run_shap_analysis(self, model_name="Random Forest", n_samples=100):
+        """Task 3: Generate SHAP Summary Plot with shape fix."""
+        model = self.models[model_name]
+        
+        # Select the sample
+        test_sample = self.X_test.head(n_samples)
+        
+        # Initialize the explainer
+        explainer = shap.TreeExplainer(model)
+        
+        # Calculate values
+        shap_values = explainer.shap_values(test_sample)
+    
+        print(f"Generating SHAP Summary Plot for {model_name}...")
+        
+        # --- THE FIX ---
+        # Sometimes Random Forest shap_values is a list, sometimes a 3D array 
+        # depending on the SHAP version. We ensure we grab the "Fraud" (class 1) values.
+        if isinstance(shap_values, list):
+            # If it's a list, we want index 1
+            val_to_plot = shap_values[1]
+        elif len(shap_values.shape) == 3:
+            # If it's a 3D array (samples, features, classes), grab class 1
+            val_to_plot = shap_values[:, :, 1]
+        else:
+            # Default fallback
+            val_to_plot = shap_values
+    
+        # Ensure feature names match exactly
+        shap.summary_plot(val_to_plot, test_sample, feature_names=test_sample.columns)
+        
+        return explainer, shap_values
+
+    def plot_specific_prediction(self, explainer, case_type="TP"):
+        """Task 3: Robust Force Plot for specific predictions."""
+        # 1. Get predictions for the whole test set
+        model = self.models["Random Forest"]
+        y_pred = model.predict(self.X_test)
+        y_true = self.y_test.values
+        
+        # 2. Find the index in X_test
+        if case_type == "TP":
+            indices = np.where((y_pred == 1) & (y_true == 1))[0]
+            title = "True Positive (Correctly Flagged Fraud)"
+        elif case_type == "FP":
+            indices = np.where((y_pred == 1) & (y_true == 0))[0]
+            title = "False Positive (Legitimate Flagged as Fraud)"
+        elif case_type == "FN":
+            indices = np.where((y_pred == 0) & (y_true == 1))[0]
+            title = "False Negative (Missed Fraud)"
+        
+        if len(indices) == 0:
+            print(f"No cases found for {case_type}")
+            return
+    
+        idx = indices[0]
+        
+        # 3. Get data for that specific row and ensure it is a 2D array/DataFrame
+        row_data = self.X_test.iloc[[idx]] # Double brackets [[ ]] keep it as a DataFrame (2D)
+        
+        # 4. Calculate SHAP values specifically for this row to avoid DimensionErrors
+        # This ensures the SHAP matrix and the row_data matrix are identical in size
+        row_shap_values = explainer.shap_values(row_data)
+    
+        # Handle the list/array structure for Random Forest
+        if isinstance(row_shap_values, list):
+            val_to_plot = row_shap_values[1][0] # Class 1, first row
+        elif len(row_shap_values.shape) == 3:
+            val_to_plot = row_shap_values[0, :, 1] # First row, all features, Class 1
+        else:
+            val_to_plot = row_shap_values[0]
+    
+        print(f"Plotting {title}...")
+        
+        # Use matplotlib=True to ensure it displays in the notebook cell
+        return shap.force_plot(
+            explainer.expected_value[1], 
+            val_to_plot, 
+            row_data.iloc[0], # Pass the row as a Series for the labels
+            matplotlib=True
+        )
