@@ -7,78 +7,111 @@ from sklearn.ensemble import RandomForestClassifier
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Essential imports for model building and evaluation
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_validate
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     average_precision_score,
     f1_score,
-    confusion_matrix
+    confusion_matrix,
+    classification_report
 )
 
 class FraudModelTrainer:
-    def __init__(self, df, target_col="class", test_size=0.2, random_state=42):
+    def __init__(self, df, target_col="Class", test_size=0.2, random_state=42):
         self.df = df
         self.target_col = target_col
         self.test_size = test_size
         self.random_state = random_state
-
-        self.X = None
-        self.y = None
-        self.X_train = None
-        self.X_test = None
-        self.y_train = None
-        self.y_test = None
-
         self.models = {}
         self.results = {}
 
     def prepare_data(self):
+        """
+        Prepares X and y with defensive checks for data integrity.
+        Updates: Added check for empty DF and switched KeyError to ValueError.
+        """
+        # 1. Defensive Check: Empty DataFrame
+        if self.df.empty:
+            raise ValueError("Cannot prepare data: The provided DataFrame is empty.")
+
+        # 2. Defensive Check: Target column identification
+        if self.target_col not in self.df.columns:
+            if 'class' in self.df.columns:
+                self.target_col = 'class'
+            elif 'Class' in self.df.columns:
+                self.target_col = 'Class'
+            else:
+                # Switched to ValueError to satisfy robust testing requirements
+                raise ValueError(f"Target column not found. Available: {self.df.columns.tolist()}")
+
         self.X = self.df.drop(columns=[self.target_col])
         self.y = self.df[self.target_col]
 
+        # Stratified split to preserve class distribution
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
-            self.X,
-            self.y,
+            self.X, self.y,
             test_size=self.test_size,
             stratify=self.y,
             random_state=self.random_state
         )
+        print(f"✅ Data prepared. Target column identified as: '{self.target_col}'")
+
+    def _check_class_diversity(self):
+        """Internal helper to ensure both classes are present before training."""
+        if len(np.unique(self.y_train)) < 2:
+            raise ValueError("Training aborted: The training set contains only one class.")
 
     def train_logistic_regression(self):
-        model = LogisticRegression(
-            class_weight="balanced",
-            max_iter=1000,
+        """Baseline model training with defensive class check."""
+        self._check_class_diversity()
+        
+        model = LogisticRegression(max_iter=500, solver='liblinear', random_state=self.random_state)
+        model.fit(self.X_train, self.y_train)
+        self.models["Logistic Regression"] = model
+        print("✅ Logistic Regression trained.")
+
+    def train_random_forest(self, n_estimators=100):
+        """Optimized Ensemble model training with defensive class check."""
+        self._check_class_diversity()
+
+        model = RandomForestClassifier(
+            n_estimators=n_estimators,
+            max_depth=10,
+            n_jobs=-1,
             random_state=self.random_state
         )
         model.fit(self.X_train, self.y_train)
-        self.models["Logistic Regression"] = model
-
-    def train_random_forest(self, n_estimators=300, max_depth=12):
-        model = RandomForestClassifier(
-            n_estimators=n_estimators,
-            max_depth=max_depth,
-            min_samples_split=5,
-            class_weight="balanced",
-            random_state=self.random_state,
-            n_jobs=-1
-        )
-        model.fit(self.X_train, self.y_train)
         self.models["Random Forest"] = model
+        print("✅ Random Forest trained.")
 
     def evaluate_model(self, model_name):
-        model = self.models[model_name]
+        """Calculates core metrics and stores them in self.results."""
+        if model_name not in self.models:
+            print(f"❌ Model '{model_name}' has not been trained yet.")
+            return
 
+        model = self.models[model_name]
         y_pred = model.predict(self.X_test)
         y_proba = model.predict_proba(self.X_test)[:, 1]
 
-        metrics = {
+        self.results[model_name] = {
             "AUC_PR": average_precision_score(self.y_test, y_proba),
             "F1_Score": f1_score(self.y_test, y_pred),
-            "Confusion_Matrix": confusion_matrix(self.y_test, y_pred)
+            "CM": confusion_matrix(self.y_test, y_pred)
         }
-
-        self.results[model_name] = metrics
-        return metrics
+        print(f"✅ {model_name} Evaluated.")
 
     def cross_validate_model(self, model_name, k=5):
+        """Performs Stratified K-Fold Cross Validation."""
+        if model_name not in self.models:
+             raise ValueError(f"Model '{model_name}' must be trained before cross-validation.")
+
+        print(f"Running {k}-fold Cross Validation for {model_name}...")
         model = self.models[model_name]
 
         cv = StratifiedKFold(n_splits=k, shuffle=True, random_state=self.random_state)
@@ -88,15 +121,12 @@ class FraudModelTrainer:
         }
 
         cv_results = cross_validate(
-            model,
-            self.X,
-            self.y,
-            cv=cv,
-            scoring=scoring,
-            n_jobs=-1
+            model, self.X, self.y,
+            cv=cv, scoring=scoring, n_jobs=-1
         )
 
         return {
+            "Model": model_name,
             "AUC_PR_Mean": cv_results["test_auc_pr"].mean(),
             "AUC_PR_Std": cv_results["test_auc_pr"].std(),
             "F1_Mean": cv_results["test_f1"].mean(),
@@ -104,15 +134,14 @@ class FraudModelTrainer:
         }
 
     def compare_models(self):
+        """Returns a side-by-side DataFrame comparison."""
         comparison = []
-
         for model_name, metrics in self.results.items():
             comparison.append({
                 "Model": model_name,
                 "AUC_PR": metrics["AUC_PR"],
                 "F1_Score": metrics["F1_Score"]
             })
-
         return pd.DataFrame(comparison)
     def plot_results(self):
         """Fast visualization of all trained models."""
